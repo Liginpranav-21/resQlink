@@ -8,7 +8,7 @@ An AI-powered emergency rescue ecosystem designed to assist people during disast
 
 ##  Project Overview
 
-**ResQLink** is a **Final Year Engineering Project** focused on building an intelligent emergency response ecosystem that connects victims, rescue teams, hospitals, and administrators through real-time communication, AI assistance, GPS tracking, BLE emergency broadcasting, and smart emergency monitoring.
+**ResQLink** is a **Third year Engineering Project** focused on building an intelligent emergency response ecosystem that connects victims, rescue teams, hospitals, and administrators through real-time communication, AI assistance, GPS tracking, BLE emergency broadcasting, and smart emergency monitoring.
 
 The system is designed to work in **remote areas**, **low-network conditions**, and **disaster situations**, ensuring emergency support remains accessible when traditional communication fails.
 
@@ -516,7 +516,7 @@ Deploy using **Firebase Hosting**
 
 #  Academic Purpose
 
-This project is developed as a **Final Year Engineering Project** to demonstrate:
+This project is developed as a **Third Year Engineering Project** to demonstrate:
 
 * Full Stack Development
 * Mobile Application Development
@@ -548,9 +548,6 @@ The project follows a **Phase-by-Phase Development Model**:
 
 ---
 
-#  License
-
-This project is developed for **educational and research purposes**.
 
 ---
 
