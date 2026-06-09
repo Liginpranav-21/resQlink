@@ -1,0 +1,1193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<title>ResQLink — Emergency App</title>
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html,body,#root{height:100%;font-family:'Inter',system-ui,sans-serif;background:#020617;color:#f1f5f9;-webkit-font-smoothing:antialiased;}
+::-webkit-scrollbar{width:3px;} ::-webkit-scrollbar-track{background:#0f172a;} ::-webkit-scrollbar-thumb{background:#334155;border-radius:2px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.6;transform:scale(.95);}}
+@keyframes sosPulse{0%{box-shadow:0 0 0 0 rgba(239,68,68,.7);}70%{box-shadow:0 0 0 30px rgba(239,68,68,0);}100%{box-shadow:0 0 0 0 rgba(239,68,68,0);}}
+@keyframes slideUp{from{transform:translateY(20px);opacity:0;}to{transform:translateY(0);opacity:1;}}
+@keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+@keyframes ripple{0%{transform:scale(0);opacity:.5;}100%{transform:scale(4);opacity:0;}}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:.3;}}
+.spin{animation:spin 1s linear infinite;}
+.pulse{animation:pulse 2s ease-in-out infinite;}
+.sos-pulse{animation:sosPulse 1.5s ease-out infinite;}
+.slide-up{animation:slideUp .3s ease-out;}
+.fade-in{animation:fadeIn .25s ease-out;}
+.blink{animation:blink 1s ease-in-out infinite;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react,typescript">
+
+// ─── Firebase Config ───────────────────────────────────────────────────────
+const FIREBASE_CONFIG = {
+  apiKey:            "PASTE_YOUR_API_KEY_HERE",
+  authDomain:        "PASTE_YOUR_AUTH_DOMAIN_HERE",
+  projectId:         "PASTE_YOUR_PROJECT_ID_HERE",
+  storageBucket:     "PASTE_YOUR_STORAGE_BUCKET_HERE",
+  messagingSenderId: "PASTE_YOUR_SENDER_ID_HERE",
+  appId:             "PASTE_YOUR_APP_ID_HERE",
+};
+const DEMO_MODE = FIREBASE_CONFIG.apiKey === "PASTE_YOUR_API_KEY_HERE";
+let auth, db;
+if (!DEMO_MODE) {
+  const app = firebase.initializeApp(FIREBASE_CONFIG);
+  auth = firebase.auth();
+  db   = firebase.firestore();
+}
+
+const {useState,useEffect,useRef,useCallback} = React;
+
+// ─── Emergency Data ────────────────────────────────────────────────────────
+const EMERGENCY_TYPES = [
+  {id:'snake_bite',     label:'Snake Bite',       icon:'🐍', color:'#10b981', severity:3, bg:'#064e3b'},
+  {id:'heart_attack',   label:'Heart Attack',     icon:'❤️', color:'#ef4444', severity:3, bg:'#450a0a'},
+  {id:'heavy_bleeding', label:'Heavy Bleeding',   icon:'🩸', color:'#dc2626', severity:3, bg:'#450a0a'},
+  {id:'fire',           label:'Fire',             icon:'🔥', color:'#f97316', severity:3, bg:'#431407'},
+  {id:'earthquake',     label:'Earthquake',       icon:'🌍', color:'#a16207', severity:3, bg:'#1c0d00'},
+  {id:'flood',          label:'Flood',            icon:'🌊', color:'#0ea5e9', severity:2, bg:'#0c1a2e'},
+  {id:'landslide',      label:'Landslide',        icon:'⛰️', color:'#a16207', severity:2, bg:'#1c1200'},
+  {id:'animal_attack',  label:'Animal Attack',    icon:'🐾', color:'#7c3aed', severity:2, bg:'#1e0a3c'},
+  {id:'fracture',       label:'Fracture',         icon:'🦴', color:'#64748b', severity:2, bg:'#0f172a'},
+  {id:'accident',       label:'Accident',         icon:'🚗', color:'#f59e0b', severity:2, bg:'#1c1200'},
+  {id:'lost_in_forest', label:'Lost in Forest',   icon:'🌲', color:'#16a34a', severity:1, bg:'#052e16'},
+  {id:'breathing_problem',label:'Breathing Issue',icon:'💨', color:'#06b6d4', severity:2, bg:'#0a2533'},
+];
+
+const FIRST_AID = {
+  snake_bite:['Keep calm — immobilize bitten limb below heart level','Remove watches/rings near bite site','Do NOT suck venom, cut wound, or apply ice','Rush to hospital immediately for antivenom'],
+  heart_attack:['Seat victim upright or semi-reclined — NOT lying flat','Loosen tight clothing around neck and chest','Give 325mg aspirin if conscious and not allergic','Begin CPR immediately if victim becomes unconscious'],
+  heavy_bleeding:['Apply firm continuous pressure with clean cloth','Elevate injured area above heart level if possible','Do not remove soaked cloth — add more layers on top','Apply tourniquet 5cm above wound if bleeding from a limb'],
+  fire:['Stop, Drop, and Roll if clothes are on fire','Cool burns with cool water for 10 minutes','Do not apply butter, toothpaste, or ice','Cover loosely with clean cling film or sterile dressing'],
+  flood:['Move immediately to highest ground available','Do not enter floodwater — even shallow water is dangerous','Avoid electrical equipment and power lines','Signal rescuers with bright cloth or phone torch'],
+  earthquake:['Drop, Cover your head/neck, Hold On to something sturdy','Stay away from windows, outer walls, and heavy furniture','If outdoors, move away from buildings and power lines','After shaking stops, check for injuries and gas leaks'],
+  landslide:['Evacuate immediately — move perpendicular to the slide path','If trapped, curl into a ball and protect your head','Cover mouth with cloth to avoid dust inhalation','Signal rescuers once safe — do not re-enter the slide zone'],
+  fracture:['Do not attempt to straighten or move the fractured bone','Immobilize with a splint using padded boards or sticks','Apply ice wrapped in cloth to reduce swelling','Keep victim still and seek medical attention immediately'],
+  lost_in_forest:['Stay in one place and activate SOS immediately','Use whistle (3 blasts = distress signal)','Build shelter, stay warm, conserve phone battery','Follow a stream downhill — it leads to civilization'],
+  animal_attack:['Back away slowly — do not run or make sudden movements','Make yourself appear large and make loud noise','If knocked down, protect your neck and vital organs','Apply pressure to wounds and seek immediate medical care'],
+  breathing_problem:['Sit victim upright — loosen any tight clothing','Use prescribed inhaler if available','Encourage slow, deep breaths and keep calm','Call emergency services immediately'],
+  accident:['Do not move victim unless in immediate danger','Call emergency services and keep victim conscious','Control bleeding with direct firm pressure','Keep victim warm and watch for signs of shock'],
+};
+
+const SOS_LEVELS = {
+  1:{label:'Minor Emergency',  desc:'Notify family & emergency contacts',    color:'#16a34a',bg:'rgba(22,163,74,.1)'},
+  2:{label:'Medical Emergency',desc:'Alert nearby rescue teams & hospitals', color:'#f59e0b',bg:'rgba(245,158,11,.1)'},
+  3:{label:'Critical Emergency',desc:'Full rescue — drones, teams & alerts', color:'#ef4444',bg:'rgba(239,68,68,.1)'},
+};
+
+// ─── AI Emergency Response (simulated) ───────────────────────────────────
+const AI_RESPONSES = {
+  'snake bite': 'Immediate steps:\n1. Keep the victim calm — panic accelerates venom spread\n2. Immobilize the bitten limb below heart level\n3. Remove tight clothing/jewelry near the bite\n4. Do NOT suck venom, cut the wound, or apply a tourniquet\n5. Rush to nearest hospital for antivenom\n\n⏱ Time is critical — antivenom must be given within 4 hours.',
+  'heart attack': 'Immediate steps:\n1. Call emergency services NOW\n2. Seat victim upright — not lying flat\n3. Loosen tight clothing around chest and neck\n4. Give 325mg aspirin if available and not allergic\n5. Begin CPR if victim becomes unconscious\n\n💡 Every minute without CPR reduces survival by 10%.',
+  'bleeding': 'Immediate steps:\n1. Apply firm, continuous pressure with clean cloth\n2. Elevate the injured area above heart level\n3. Do NOT remove soaked cloth — add more layers\n4. Apply tourniquet 5cm above wound if on a limb\n5. Keep victim still and warm — treat for shock\n\n⚠️ If blood soaks through quickly, pressure is insufficient.',
+  'fracture': 'Immediate steps:\n1. Do NOT attempt to straighten the bone\n2. Immobilize with a splint — padded boards or sticks\n3. Apply ice wrapped in cloth to reduce swelling\n4. Keep victim still and comfortable\n5. Seek emergency medical care immediately\n\n💡 Open fractures (bone visible) are life-threatening — cover with clean cloth.',
+  'fire': 'Immediate steps:\n1. Stop, Drop, and Roll if clothes are on fire\n2. Cool burns with cool running water for 10 minutes\n3. Do NOT use ice, butter, or toothpaste\n4. Cover loosely with clean cling film or sterile dressing\n5. Seek immediate medical attention for large burns\n\n⚠️ For chemical burns, flush with water for 20+ minutes.',
+  'flood': 'Immediate steps:\n1. Move to highest ground immediately\n2. Do NOT enter floodwater — 15cm can knock you down\n3. Avoid electrical equipment and power lines\n4. Signal for help using bright cloth or phone torch\n5. Do not drive through flooded roads\n\n⚠️ Most flood deaths occur in vehicles.',
+  'lost': 'Immediate steps:\n1. STAY in one place — moving makes you harder to find\n2. Activate SOS signal immediately\n3. Blow 3 whistle blasts repeatedly (universal distress signal)\n4. Build shelter, stay warm, conserve phone battery\n5. If near a stream, follow it downhill\n\n💡 Leave markers — blazes on trees, rock arrows.',
+  'default': 'I\'m analyzing your situation. Please describe what happened:\n\n• What type of emergency is it?\n• Is anyone injured? How severely?\n• Can the victim walk or move?\n• Do you have any first aid supplies?\n• What is your current location?\n\nPress the SOS button above for immediate emergency dispatch.',
+};
+
+const getAIResponse = (msg) => {
+  const lower = msg.toLowerCase();
+  if (lower.includes('snake') || lower.includes('bite') || lower.includes('venom')) return AI_RESPONSES['snake bite'];
+  if (lower.includes('heart') || lower.includes('chest') || lower.includes('cardiac')) return AI_RESPONSES['heart attack'];
+  if (lower.includes('bleed') || lower.includes('blood') || lower.includes('cut') || lower.includes('wound')) return AI_RESPONSES['bleeding'];
+  if (lower.includes('fracture') || lower.includes('bone') || lower.includes('broken')) return AI_RESPONSES['fracture'];
+  if (lower.includes('fire') || lower.includes('burn')) return AI_RESPONSES['fire'];
+  if (lower.includes('flood') || lower.includes('water') || lower.includes('drown')) return AI_RESPONSES['flood'];
+  if (lower.includes('lost') || lower.includes('forest') || lower.includes('jungle') || lower.includes('stuck')) return AI_RESPONSES['lost'];
+  return AI_RESPONSES['default'];
+};
+
+// ─── Helpers ───────────────────────────────────────────────────────────────
+const timeAgo = (ts) => {
+  const d = Date.now()-ts, m=Math.floor(d/60000);
+  if(m<1)return'Just now';if(m<60)return`${m}m ago`;
+  const h=Math.floor(m/60);if(h<24)return`${h}h ago`;return`${Math.floor(h/24)}d ago`;
+};
+const genId = () => Math.random().toString(36).substr(2,9).toUpperCase();
+
+// ─── Bottom Nav ────────────────────────────────────────────────────────────
+const TABS = [
+  {key:'home',    icon:'🏠', label:'Home'},
+  {key:'emergency',icon:'⚠️',label:'Emergency'},
+  {key:'sos',     icon:'🆘', label:'SOS'},
+  {key:'ai',      icon:'🤖', label:'ResQAI'},
+  {key:'profile', icon:'👤', label:'Profile'},
+];
+
+function BottomNav({tab, setTab, sosActive}) {
+  return (
+    <nav style={{position:'fixed',bottom:0,left:0,right:0,background:'#0f172a',borderTop:'1px solid #1e293b',display:'flex',zIndex:100,paddingBottom:'env(safe-area-inset-bottom,0)'}}>
+      {TABS.map(t=>{
+        const active = tab===t.key;
+        const isSOS = t.key==='sos';
+        return (
+          <button key={t.key} onClick={()=>setTab(t.key)}
+            style={{flex:1,padding:isSOS?'6px 0 10px':'8px 0 10px',display:'flex',flexDirection:'column',alignItems:'center',gap:3,border:'none',background:'transparent',cursor:'pointer',position:'relative'}}>
+            {isSOS
+              ? <div style={{width:52,height:52,borderRadius:'50%',background:sosActive?'#ef4444':'#991b1b',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,marginTop:-20,border:'3px solid #020617',boxShadow:sosActive?'0 0 20px rgba(239,68,68,.6)':'none',transition:'all .3s'}}>
+                  {t.icon}
+                </div>
+              : <span style={{fontSize:20,opacity:active?1:.5}}>{t.icon}</span>
+            }
+            {!isSOS && <span style={{fontSize:10,color:active?'#f87171':'#475569',fontWeight:active?600:400}}>{t.label}</span>}
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+// ─── Splash Screen ─────────────────────────────────────────────────────────
+function SplashScreen({onStart}) {
+  const [show, setShow] = useState(false);
+  useEffect(()=>{setTimeout(()=>setShow(true),200);},[]);
+  return (
+    <div style={{minHeight:'100vh',background:'linear-gradient(160deg,#020617 0%,#0f0a1e 50%,#1a0505 100%)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:32}}>
+      {show && <>
+        <div className="fade-in" style={{textAlign:'center',marginBottom:48}}>
+          <div style={{width:100,height:100,borderRadius:28,background:'linear-gradient(135deg,#ef4444,#b91c1c)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:48,margin:'0 auto 24px',boxShadow:'0 0 60px rgba(239,68,68,.4)'}}>🚨</div>
+          <h1 style={{fontSize:42,fontWeight:800,color:'#f1f5f9',letterSpacing:-1,marginBottom:8}}>ResQLink</h1>
+          <p style={{color:'#f87171',fontSize:14,fontWeight:500,letterSpacing:.5}}>"Connecting Help When Networks Fail"</p>
+        </div>
+        <div className="fade-in" style={{width:'100%',maxWidth:320,display:'flex',flexDirection:'column',gap:12,animationDelay:'.2s'}}>
+          <button onClick={onStart}
+            style={{width:'100%',padding:'16px',borderRadius:14,background:'linear-gradient(135deg,#ef4444,#b91c1c)',border:'none',color:'#fff',fontSize:16,fontWeight:700,cursor:'pointer',boxShadow:'0 8px 32px rgba(239,68,68,.4)'}}>
+            Get Started
+          </button>
+          <div style={{textAlign:'center',padding:'12px',borderRadius:12,background:'rgba(239,68,68,.08)',border:'1px solid rgba(239,68,68,.2)',fontSize:12,color:'#f87171',fontWeight:500}}>
+            ⚡ Emergency Mode — Tap SOS anytime
+          </div>
+        </div>
+        <div className="fade-in" style={{marginTop:48,display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,width:'100%',maxWidth:320,animationDelay:'.3s'}}>
+          {[['🚨','Smart SOS'],['🤖','AI Assistant'],['📍','GPS Tracking'],['🚁','Drone Support']].map(([ic,lb])=>(
+            <div key={lb} style={{display:'flex',alignItems:'center',gap:8,padding:'10px 12px',borderRadius:10,background:'rgba(255,255,255,.03)',border:'1px solid rgba(255,255,255,.06)',fontSize:12,color:'#64748b'}}>
+              <span style={{fontSize:16}}>{ic}</span><span>{lb}</span>
+            </div>
+          ))}
+        </div>
+      </>}
+    </div>
+  );
+}
+
+// ─── Auth Screen ───────────────────────────────────────────────────────────
+function AuthScreen({onAuth}) {
+  const [mode,setMode] = useState('login');
+  const [email,setEmail] = useState('');
+  const [password,setPassword] = useState('');
+  const [name,setName] = useState('');
+  const [phone,setPhone] = useState('');
+  const [loading,setLoading] = useState(false);
+  const [error,setError] = useState('');
+  const [success,setSuccess] = useState('');
+
+  const inp = {width:'100%',background:'#1e293b',border:'1px solid #334155',borderRadius:12,padding:'13px 16px',color:'#f1f5f9',fontSize:14,outline:'none',marginBottom:12,fontFamily:'inherit'};
+
+  const handle = async(e) => {
+    e.preventDefault(); setError(''); setSuccess(''); setLoading(true);
+    try {
+      if(DEMO_MODE) {
+        await new Promise(r=>setTimeout(r,700));
+        onAuth({uid:'demo-user-'+Date.now(),email:email||'user@demo.com',displayName:name||'Demo User',role:'user',phone});
+        return;
+      }
+      if(mode==='login') {
+        const c = await auth.signInWithEmailAndPassword(email,password);
+        const snap = await db.collection('users').doc(c.user.uid).get();
+        const d = snap.exists?snap.data():{};
+        onAuth({uid:c.user.uid,email:c.user.email,displayName:d.displayName||'User',role:d.role||'user',phone:d.phone});
+      } else if(mode==='register') {
+        const c = await auth.createUserWithEmailAndPassword(email,password);
+        const userData = {uid:c.user.uid,email,displayName:name,role:'user',phone,createdAt:firebase.firestore.FieldValue.serverTimestamp()};
+        await db.collection('users').doc(c.user.uid).set(userData);
+        onAuth({uid:c.user.uid,email,displayName:name,role:'user',phone});
+      } else {
+        await auth.sendPasswordResetEmail(email);
+        setSuccess('Password reset email sent!');
+      }
+    } catch(err) {
+      setError(err.message?.replace('Firebase: ','')?.replace(/\(auth[^)]+\)/,'').trim()||'Error occurred');
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <div style={{minHeight:'100vh',background:'#020617',display:'flex',flexDirection:'column'}}>
+      <div style={{background:'linear-gradient(160deg,#0f172a,#1a0505)',padding:'48px 24px 32px',textAlign:'center'}}>
+        <div style={{width:64,height:64,borderRadius:18,background:'linear-gradient(135deg,#ef4444,#b91c1c)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:30,margin:'0 auto 16px',boxShadow:'0 0 40px rgba(239,68,68,.3)'}}>🚨</div>
+        <h2 style={{color:'#f1f5f9',fontSize:22,fontWeight:700}}>ResQLink</h2>
+        <p style={{color:'#64748b',fontSize:13,marginTop:4}}>Emergency Rescue Network</p>
+      </div>
+
+      <div style={{flex:1,padding:'24px 20px',overflowY:'auto'}}>
+        <div style={{background:'#0f172a',borderRadius:20,border:'1px solid #1e293b',padding:24}}>
+          <h3 style={{color:'#f1f5f9',fontSize:18,fontWeight:700,marginBottom:4}}>
+            {mode==='login'?'Sign In':mode==='register'?'Create Account':'Reset Password'}
+          </h3>
+          <p style={{color:'#475569',fontSize:13,marginBottom:20}}>{mode==='login'?'Access your emergency profile':mode==='register'?'Join the ResQLink network':'Enter your email'}</p>
+
+          {error&&<div style={{padding:'10px 14px',background:'rgba(239,68,68,.1)',border:'1px solid rgba(239,68,68,.3)',borderRadius:10,color:'#f87171',fontSize:13,marginBottom:16}}>⚠️ {error}</div>}
+          {success&&<div style={{padding:'10px 14px',background:'rgba(16,185,129,.1)',border:'1px solid rgba(16,185,129,.3)',borderRadius:10,color:'#34d399',fontSize:13,marginBottom:16}}>✓ {success}</div>}
+
+          <form onSubmit={handle}>
+            {mode==='register'&&<input type="text" required value={name} onChange={e=>setName(e.target.value)} placeholder="Full Name" style={inp}/>}
+            <input type="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email Address" style={inp}/>
+            {mode==='register'&&<input type="tel" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="Phone Number (optional)" style={inp}/>}
+            {mode!=='reset'&&<input type="password" required value={password} onChange={e=>setPassword(e.target.value)} placeholder="Password" minLength={6} style={inp}/>}
+            <button type="submit" disabled={loading}
+              style={{width:'100%',padding:'15px',borderRadius:12,background:'linear-gradient(135deg,#ef4444,#b91c1c)',border:'none',color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',opacity:loading?.6:1,marginBottom:16,letterSpacing:.3}}>
+              {loading?'Processing…':mode==='login'?'Sign In →':mode==='register'?'Create Account →':'Send Reset Email'}
+            </button>
+          </form>
+
+          {mode==='login'&&<>
+            <button onClick={()=>setMode('register')} style={{width:'100%',padding:'12px',borderRadius:12,background:'rgba(255,255,255,.04)',border:'1px solid #334155',color:'#94a3b8',fontSize:14,cursor:'pointer',marginBottom:8}}>
+              New user? Create Account
+            </button>
+            <button onClick={()=>setMode('reset')} style={{width:'100%',padding:'10px',border:'none',background:'transparent',color:'#475569',fontSize:13,cursor:'pointer'}}>Forgot password?</button>
+          </>}
+          {mode!=='login'&&<button onClick={()=>setMode('login')} style={{width:'100%',padding:'10px',border:'none',background:'transparent',color:'#475569',fontSize:13,cursor:'pointer'}}>← Back to Sign In</button>}
+
+          {DEMO_MODE&&<div style={{marginTop:16,padding:'10px 14px',background:'rgba(245,158,11,.08)',border:'1px solid rgba(245,158,11,.2)',borderRadius:10,fontSize:12,color:'#fbbf24',textAlign:'center'}}>
+            ⚡ Demo Mode — any email/password works
+          </div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Home Dashboard ────────────────────────────────────────────────────────
+function HomeScreen({user,location,sosActive,setSosActive,setTab,emergencyHistory}) {
+  const [bleActive,setBleActive] = useState(false);
+  const active = emergencyHistory.filter(e=>e.status==='active'||e.status==='assigned').length;
+
+  return (
+    <div style={{paddingBottom:80,overflowY:'auto',height:'100%'}}>
+      {/* Header */}
+      <div style={{background:'linear-gradient(160deg,#0f172a,#150808)',padding:'48px 20px 24px'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}}>
+          <div>
+            <p style={{color:'#64748b',fontSize:12}}>Welcome back</p>
+            <h2 style={{color:'#f1f5f9',fontSize:20,fontWeight:700}}>{user?.displayName?.split(' ')[0]||'User'} 👋</h2>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:999,background:sosActive?'rgba(239,68,68,.15)':'rgba(16,185,129,.1)',border:`1px solid ${sosActive?'rgba(239,68,68,.3)':'rgba(16,185,129,.2)'}`}}>
+            <div style={{width:6,height:6,borderRadius:'50%',background:sosActive?'#ef4444':'#10b981'}} className={sosActive?'blink':'pulse'}/>
+            <span style={{fontSize:11,fontWeight:600,color:sosActive?'#f87171':'#34d399'}}>{sosActive?'SOS ACTIVE':'SAFE'}</span>
+          </div>
+        </div>
+
+        {/* GPS Card */}
+        <div style={{padding:'14px 16px',borderRadius:14,background:'rgba(255,255,255,.04)',border:'1px solid rgba(255,255,255,.08)',marginBottom:12}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            <div>
+              <p style={{color:'#475569',fontSize:11,marginBottom:4}}>📍 Live GPS Location</p>
+              {location
+                ? <><p style={{color:'#f1f5f9',fontSize:13,fontFamily:'monospace'}}>{location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}</p>
+                    <p style={{color:'#34d399',fontSize:11,marginTop:2}}>✓ Signal active · Accuracy {Math.round(location.accuracy||15)}m</p></>
+                : <p style={{color:'#f59e0b',fontSize:12}}>⚡ Acquiring GPS signal…</p>
+              }
+            </div>
+            <div style={{width:36,height:36,borderRadius:10,background:'rgba(16,185,129,.1)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>📡</div>
+          </div>
+        </div>
+
+        {/* Bluetooth card */}
+        <div style={{padding:'14px 16px',borderRadius:14,background:'rgba(255,255,255,.04)',border:`1px solid ${bleActive?'rgba(59,130,246,.3)':'rgba(255,255,255,.08)'}`,cursor:'pointer'}}
+          onClick={()=>setBleActive(!bleActive)}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            <div>
+              <p style={{color:'#475569',fontSize:11,marginBottom:4}}>📶 BlueBeacon BLE</p>
+              <p style={{color:bleActive?'#60a5fa':'#475569',fontSize:12,fontWeight:500}}>{bleActive?'Broadcasting emergency signal…':'Tap to activate offline beacon'}</p>
+              {bleActive&&<p style={{color:'#64748b',fontSize:11,marginTop:2}}>Nearby devices: 2 detected</p>}
+            </div>
+            <div style={{width:36,height:36,borderRadius:10,background:bleActive?'rgba(59,130,246,.15)':'rgba(255,255,255,.04)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,border:bleActive?'1px solid rgba(59,130,246,.3)':'none'}}>
+              📶
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Quick Actions */}
+      <div style={{padding:'20px 20px 0'}}>
+        <p style={{color:'#64748b',fontSize:12,fontWeight:500,textTransform:'uppercase',letterSpacing:'.08em',marginBottom:12}}>Quick Actions</p>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:20}}>
+          {[
+            {icon:'⚠️', label:'Emergency', key:'emergency', color:'#ef4444', bg:'rgba(239,68,68,.1)'},
+            {icon:'🤖', label:'AI Help',    key:'ai',        color:'#8b5cf6', bg:'rgba(139,92,246,.1)'},
+            {icon:'🏥', label:'Hospitals',  key:'nearby',    color:'#0ea5e9', bg:'rgba(14,165,233,.1)'},
+            {icon:'👤', label:'Medical',    key:'medical',   color:'#10b981', bg:'rgba(16,185,129,.1)'},
+            {icon:'📋', label:'History',    key:'history',   color:'#f59e0b', bg:'rgba(245,158,11,.1)'},
+            {icon:'🚁', label:'Drone',      key:'drone',     color:'#64748b', bg:'rgba(100,116,139,.1)'},
+          ].map(a=>(
+            <button key={a.key} onClick={()=>setTab(a.key)}
+              style={{padding:'14px 8px',borderRadius:14,background:a.bg,border:`1px solid ${a.color}25`,display:'flex',flexDirection:'column',alignItems:'center',gap:6,cursor:'pointer'}}>
+              <span style={{fontSize:22}}>{a.icon}</span>
+              <span style={{color:a.color,fontSize:11,fontWeight:500}}>{a.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* ResQDrone card */}
+        <div style={{padding:'16px',borderRadius:16,background:'linear-gradient(135deg,rgba(59,130,246,.1),rgba(139,92,246,.1))',border:'1px solid rgba(99,102,241,.2)',marginBottom:12}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            <div>
+              <p style={{color:'#94a3b8',fontSize:11,marginBottom:4}}>🚁 ResQDrone-X Status</p>
+              <p style={{color:'#f1f5f9',fontSize:14,fontWeight:600}}>Standby — Ready to Deploy</p>
+              <p style={{color:'#64748b',fontSize:11,marginTop:2}}>Battery: 92% · Range: 5km</p>
+            </div>
+            <div style={{textAlign:'right'}}>
+              <p style={{color:'#60a5fa',fontSize:11}}>Altitude</p>
+              <p style={{color:'#f1f5f9',fontSize:18,fontWeight:700}}>0m</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Active emergencies badge */}
+        {active>0&&(
+          <div style={{padding:'14px 16px',borderRadius:14,background:'rgba(239,68,68,.08)',border:'1px solid rgba(239,68,68,.3)',display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer'}}
+            onClick={()=>setTab('history')}>
+            <div style={{display:'flex',alignItems:'center',gap:10}}>
+              <div style={{width:8,height:8,borderRadius:'50%',background:'#ef4444'}} className="blink"/>
+              <p style={{color:'#f1f5f9',fontSize:13,fontWeight:500}}>{active} Active Emergency</p>
+            </div>
+            <span style={{color:'#f87171',fontSize:12}}>View →</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Emergency Type Screen ──────────────────────────────────────────────────
+function EmergencyScreen({onSelect, selectedType, onFirstAid}) {
+  const [showAid, setShowAid] = useState(null);
+
+  if(showAid) {
+    const type = EMERGENCY_TYPES.find(t=>t.id===showAid);
+    const steps = FIRST_AID[showAid]||[];
+    return (
+      <div style={{height:'100%',overflowY:'auto',paddingBottom:80}} className="slide-up">
+        <div style={{padding:'48px 20px 20px',background:`linear-gradient(160deg,${type.bg},#020617)`}}>
+          <button onClick={()=>setShowAid(null)} style={{background:'rgba(255,255,255,.08)',border:'none',color:'#94a3b8',fontSize:13,padding:'8px 14px',borderRadius:10,cursor:'pointer',marginBottom:20}}>← Back</button>
+          <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:8}}>
+            <span style={{fontSize:40}}>{type.icon}</span>
+            <div>
+              <h2 style={{color:'#f1f5f9',fontSize:20,fontWeight:700}}>{type.label}</h2>
+              <span style={{fontSize:12,padding:'2px 10px',borderRadius:999,background:`${type.color}20`,color:type.color,border:`1px solid ${type.color}30`}}>
+                {type.severity===3?'Critical':type.severity===2?'Serious':'Minor'} Severity
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div style={{padding:'20px'}}>
+          <p style={{color:'#64748b',fontSize:12,textTransform:'uppercase',letterSpacing:'.08em',marginBottom:16,fontWeight:500}}>First Aid Steps</p>
+          <div style={{display:'flex',flexDirection:'column',gap:12,marginBottom:20}}>
+            {steps.map((step,i)=>(
+              <div key={i} style={{display:'flex',gap:12,padding:'14px',borderRadius:14,background:'#0f172a',border:'1px solid #1e293b'}}>
+                <div style={{width:26,height:26,borderRadius:8,background:`${type.color}15`,border:`1px solid ${type.color}30`,display:'flex',alignItems:'center',justifyContent:'center',color:type.color,fontSize:12,fontWeight:700,flexShrink:0}}>
+                  {i+1}
+                </div>
+                <p style={{color:'#cbd5e1',fontSize:13,lineHeight:1.6}}>{step}</p>
+              </div>
+            ))}
+          </div>
+          <button onClick={()=>{onSelect(showAid);setShowAid(null);}}
+            style={{width:'100%',padding:'16px',borderRadius:14,background:type.color,border:'none',color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',boxShadow:`0 8px 24px ${type.color}40`}}>
+            🆘 Activate SOS for {type.label}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{height:'100%',overflowY:'auto',paddingBottom:80}}>
+      <div style={{padding:'48px 20px 20px',background:'linear-gradient(160deg,#0f172a,#020617)'}}>
+        <h2 style={{color:'#f1f5f9',fontSize:22,fontWeight:700,marginBottom:4}}>What happened?</h2>
+        <p style={{color:'#64748b',fontSize:13}}>Select your emergency type for first aid &amp; SOS</p>
+      </div>
+      <div style={{padding:'0 16px 16px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+        {EMERGENCY_TYPES.map(type=>{
+          const sel = selectedType===type.id;
+          return (
+            <div key={type.id}
+              style={{padding:'16px 12px',borderRadius:16,background:sel?type.bg:`rgba(255,255,255,.03)`,border:`1px solid ${sel?type.color:'rgba(255,255,255,.08)'}`,cursor:'pointer',transition:'all .2s',position:'relative'}}
+              onClick={()=>onSelect(type.id)}>
+              {sel&&<div style={{position:'absolute',top:8,right:8,width:16,height:16,borderRadius:'50%',background:type.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,color:'#fff',fontWeight:700}}>✓</div>}
+              <div style={{fontSize:30,marginBottom:8}}>{type.icon}</div>
+              <p style={{color:sel?type.color:'#94a3b8',fontSize:13,fontWeight:600,marginBottom:4}}>{type.label}</p>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                <span style={{fontSize:10,padding:'2px 6px',borderRadius:4,background:`${type.color}15`,color:type.color}}>
+                  {type.severity===3?'Critical':type.severity===2?'Serious':'Minor'}
+                </span>
+                <button onClick={e=>{e.stopPropagation();setShowAid(type.id);}}
+                  style={{fontSize:10,color:'#475569',background:'rgba(255,255,255,.06)',border:'none',padding:'3px 8px',borderRadius:6,cursor:'pointer'}}>
+                  Aid →
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── SOS Screen ────────────────────────────────────────────────────────────
+function SOSScreen({user,location,selectedType,sosActive,setSosActive,onSOSTrigger,emergencyHistory}) {
+  const [level,setLevel] = useState(1);
+  const [sending,setSending] = useState(false);
+  const [sent,setSent] = useState(false);
+  const type = EMERGENCY_TYPES.find(t=>t.id===selectedType);
+
+  const handleSOS = async() => {
+    if(sending||sent) return;
+    setSending(true);
+    await new Promise(r=>setTimeout(r,1500));
+    const emergency = {
+      id: genId(), userId: user.uid, userName: user.displayName, userPhone: user.phone||'',
+      type: selectedType||'accident', level, status:'active',
+      location: location||{latitude:11.0168,longitude:76.9558,timestamp:Date.now()},
+      bloodGroup:'O+', createdAt:Date.now(), updatedAt:Date.now(),
+    };
+    if(!DEMO_MODE) {
+      try { await db.collection('emergencies').add({...emergency,createdAt:firebase.firestore.FieldValue.serverTimestamp(),updatedAt:firebase.firestore.FieldValue.serverTimestamp()}); } catch{}
+    }
+    onSOSTrigger(emergency);
+    setSosActive(true); setSending(false); setSent(true);
+  };
+
+  const handleCancel = () => { setSosActive(false); setSent(false); };
+
+  return (
+    <div style={{height:'100%',overflowY:'auto',paddingBottom:80,background:'linear-gradient(160deg,#020617,#1a0505)'}}>
+      <div style={{padding:'48px 20px 24px',textAlign:'center'}}>
+        <h2 style={{color:'#f1f5f9',fontSize:22,fontWeight:700,marginBottom:4}}>Emergency SOS</h2>
+        <p style={{color:'#64748b',fontSize:13}}>
+          {type?`${type.icon} ${type.label} selected`:'No emergency type selected'}
+        </p>
+      </div>
+
+      {/* Big SOS Button */}
+      <div style={{display:'flex',justifyContent:'center',marginBottom:32}}>
+        <button onClick={handleSOS} disabled={sending||sent}
+          style={{width:180,height:180,borderRadius:'50%',
+            background:sent?'linear-gradient(135deg,#16a34a,#15803d)':sending?'linear-gradient(135deg,#f59e0b,#d97706)':'linear-gradient(135deg,#ef4444,#991b1b)',
+            border:`6px solid ${sent?'#4ade80':sending?'#fbbf24':'#fca5a5'}`,
+            display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',cursor:sending||sent?'default':'pointer',
+            boxShadow:sent?'0 0 40px rgba(22,163,74,.5)':sending?'0 0 40px rgba(245,158,11,.5)':'0 0 40px rgba(239,68,68,.5)',
+            transition:'all .3s'}}
+          className={!sent&&!sending?'sos-pulse':''}>
+          <span style={{fontSize:48,marginBottom:8}}>{sent?'✓':sending?'⏳':'🆘'}</span>
+          <span style={{color:'#fff',fontWeight:800,fontSize:18,letterSpacing:.5}}>
+            {sent?'SENT':sending?'SENDING':'SOS'}
+          </span>
+        </button>
+      </div>
+
+      {/* Level selector */}
+      {!sent&&!sending&&(
+        <div style={{padding:'0 20px 24px'}}>
+          <p style={{color:'#64748b',fontSize:12,textTransform:'uppercase',letterSpacing:'.08em',marginBottom:12,fontWeight:500}}>Emergency Level</p>
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            {[1,2,3].map(l=>{
+              const info = SOS_LEVELS[l];
+              return (
+                <button key={l} onClick={()=>setLevel(l)}
+                  style={{padding:'14px 16px',borderRadius:14,border:`1px solid ${level===l?info.color+'50':'#1e293b'}`,background:level===l?info.bg:'rgba(255,255,255,.02)',cursor:'pointer',textAlign:'left',display:'flex',alignItems:'center',gap:12}}>
+                  <div style={{width:32,height:32,borderRadius:10,background:`${info.color}20`,display:'flex',alignItems:'center',justifyContent:'center',color:info.color,fontSize:13,fontWeight:700,flexShrink:0}}>L{l}</div>
+                  <div>
+                    <p style={{color:level===l?info.color:'#94a3b8',fontSize:13,fontWeight:600}}>{info.label}</p>
+                    <p style={{color:'#475569',fontSize:11,marginTop:1}}>{info.desc}</p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Status */}
+      {sent&&(
+        <div style={{padding:'0 20px'}} className="slide-up">
+          <div style={{padding:'20px',borderRadius:16,background:'rgba(22,163,74,.1)',border:'1px solid rgba(22,163,74,.3)',marginBottom:16,textAlign:'center'}}>
+            <p style={{color:'#34d399',fontSize:20,fontWeight:700,marginBottom:4}}>✓ SOS Sent</p>
+            <p style={{color:'#64748b',fontSize:13}}>Emergency services alerted · Help is on the way</p>
+            {location&&<p style={{color:'#475569',fontSize:11,marginTop:8,fontFamily:'monospace'}}>📍 {location.latitude.toFixed(4)}, {location.longitude.toFixed(4)}</p>}
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            {['📱 Emergency contacts notified','📡 GPS location shared','🦺 Nearest rescue team alerted','🚁 Drone dispatch requested'].map((s,i)=>(
+              <div key={i} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',borderRadius:12,background:'rgba(255,255,255,.03)',border:'1px solid #1e293b'}}>
+                <div style={{width:6,height:6,borderRadius:'50%',background:'#34d399',flexShrink:0}}/>
+                <span style={{color:'#94a3b8',fontSize:13}}>{s}</span>
+              </div>
+            ))}
+          </div>
+          <button onClick={handleCancel} style={{width:'100%',marginTop:20,padding:'14px',borderRadius:14,background:'rgba(239,68,68,.1)',border:'1px solid rgba(239,68,68,.3)',color:'#f87171',fontSize:14,fontWeight:600,cursor:'pointer'}}>
+            Cancel SOS
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── AI Assistant Screen ────────────────────────────────────────────────────
+function AIScreen({user}) {
+  const [messages,setMessages] = useState([
+    {id:1, role:'assistant', text:'Hi! I\'m ResQAI, your emergency assistant. Tell me what happened and I\'ll guide you through the best response.\n\n🚨 In critical situations, always press the SOS button first, then talk to me.', time:Date.now()}
+  ]);
+  const [input,setInput] = useState('');
+  const [loading,setLoading] = useState(false);
+  const [apiMode,setApiMode] = useState('demo');
+  const [apiKey,setApiKey] = useState('');
+  const [showSettings,setShowSettings] = useState(false);
+  const bottomRef = useRef(null);
+
+  const scrollBottom = () => { bottomRef.current?.scrollIntoView({behavior:'smooth'}); };
+  useEffect(()=>{ scrollBottom(); },[messages]);
+
+  const QUICK = ['Snake bite help','Heart attack steps','Heavy bleeding','I\'m lost in forest','Earthquake safety'];
+
+  const send = async(text=input) => {
+    if(!text.trim()||loading) return;
+    const userMsg = {id:Date.now(),role:'user',text:text.trim(),time:Date.now()};
+    setMessages(m=>[...m,userMsg]); setInput(''); setLoading(true);
+    try {
+      let reply;
+      if(apiMode==='openai'&&apiKey) {
+        const res = await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${apiKey}`},
+          body:JSON.stringify({model:'gpt-3.5-turbo',max_tokens:300,messages:[
+            {role:'system',content:'You are ResQAI, an emergency first aid assistant. Give concise, numbered, actionable emergency guidance. Always recommend calling emergency services for serious situations.'},
+            ...messages.slice(-4).map(m=>({role:m.role==='user'?'user':'assistant',content:m.text})),
+            {role:'user',content:text}
+          ]})});
+        const d = await res.json();
+        reply = d.choices?.[0]?.message?.content||getAIResponse(text);
+      } else {
+        await new Promise(r=>setTimeout(r,800));
+        reply = getAIResponse(text);
+      }
+      setMessages(m=>[...m,{id:Date.now()+1,role:'assistant',text:reply,time:Date.now()}]);
+    } catch { setMessages(m=>[...m,{id:Date.now()+1,role:'assistant',text:getAIResponse(text),time:Date.now()}]); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div style={{height:'100%',display:'flex',flexDirection:'column',background:'#020617'}}>
+      {/* Header */}
+      <div style={{padding:'48px 20px 16px',background:'linear-gradient(160deg,#0f172a,#1e0a3c)',borderBottom:'1px solid #1e293b',flexShrink:0}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <div style={{display:'flex',alignItems:'center',gap:12}}>
+            <div style={{width:42,height:42,borderRadius:12,background:'linear-gradient(135deg,#7c3aed,#4c1d95)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>🤖</div>
+            <div>
+              <p style={{color:'#f1f5f9',fontSize:16,fontWeight:700}}>ResQAI</p>
+              <div style={{display:'flex',alignItems:'center',gap:4}}>
+                <div style={{width:5,height:5,borderRadius:'50%',background:'#10b981'}} className="pulse"/>
+                <p style={{color:'#34d399',fontSize:11}}>Emergency Assistant · Online</p>
+              </div>
+            </div>
+          </div>
+          <button onClick={()=>setShowSettings(!showSettings)} style={{background:'rgba(255,255,255,.06)',border:'1px solid #334155',borderRadius:10,padding:'6px 12px',color:'#64748b',fontSize:12,cursor:'pointer'}}>
+            ⚙️ API
+          </button>
+        </div>
+
+        {showSettings&&(
+          <div style={{marginTop:12,padding:'12px',borderRadius:12,background:'rgba(0,0,0,.3)',border:'1px solid #334155'}} className="slide-up">
+            <select value={apiMode} onChange={e=>setApiMode(e.target.value)}
+              style={{width:'100%',background:'#1e293b',border:'1px solid #334155',borderRadius:8,padding:'8px 12px',color:'#f1f5f9',fontSize:13,marginBottom:8}}>
+              <option value="demo">Demo Mode (no API key needed)</option>
+              <option value="openai">OpenAI GPT (paste key below)</option>
+            </select>
+            {apiMode==='openai'&&(
+              <input value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="sk-..." type="password"
+                style={{width:'100%',background:'#1e293b',border:'1px solid #334155',borderRadius:8,padding:'8px 12px',color:'#f1f5f9',fontSize:13}}/>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Messages */}
+      <div style={{flex:1,overflowY:'auto',padding:'16px',display:'flex',flexDirection:'column',gap:12}}>
+        {messages.map(m=>(
+          <div key={m.id} style={{display:'flex',justifyContent:m.role==='user'?'flex-end':'flex-start'}}>
+            {m.role==='assistant'&&<div style={{width:28,height:28,borderRadius:8,background:'linear-gradient(135deg,#7c3aed,#4c1d95)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,flexShrink:0,marginRight:8,marginTop:2}}>🤖</div>}
+            <div style={{maxWidth:'80%',padding:'12px 14px',borderRadius:m.role==='user'?'16px 16px 4px 16px':'16px 16px 16px 4px',
+              background:m.role==='user'?'linear-gradient(135deg,#7c3aed,#4c1d95)':'#1e293b',
+              border:m.role==='assistant'?'1px solid #334155':'none',fontSize:13,color:'#e2e8f0',lineHeight:1.6,whiteSpace:'pre-wrap'}}>
+              {m.text}
+            </div>
+          </div>
+        ))}
+        {loading&&(
+          <div style={{display:'flex',alignItems:'flex-end',gap:8}}>
+            <div style={{width:28,height:28,borderRadius:8,background:'linear-gradient(135deg,#7c3aed,#4c1d95)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14}}>🤖</div>
+            <div style={{padding:'12px 16px',borderRadius:'16px 16px 16px 4px',background:'#1e293b',border:'1px solid #334155',display:'flex',gap:4,alignItems:'center'}}>
+              {[0,1,2].map(i=><div key={i} style={{width:6,height:6,borderRadius:'50%',background:'#475569',animation:`pulse ${.6+i*.15}s ease-in-out infinite`}}/>)}
+            </div>
+          </div>
+        )}
+        <div ref={bottomRef}/>
+      </div>
+
+      {/* Quick prompts */}
+      <div style={{padding:'8px 16px',display:'flex',gap:8,overflowX:'auto',flexShrink:0,scrollbarWidth:'none'}}>
+        {QUICK.map(q=>(
+          <button key={q} onClick={()=>send(q)} style={{padding:'6px 12px',borderRadius:999,background:'rgba(124,58,237,.1)',border:'1px solid rgba(124,58,237,.3)',color:'#a78bfa',fontSize:11,whiteSpace:'nowrap',cursor:'pointer',flexShrink:0}}>
+            {q}
+          </button>
+        ))}
+      </div>
+
+      {/* Input */}
+      <div style={{padding:'12px 16px 80px',borderTop:'1px solid #1e293b',flexShrink:0,display:'flex',gap:10}}>
+        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()}
+          placeholder="Describe your emergency…"
+          style={{flex:1,background:'#1e293b',border:'1px solid #334155',borderRadius:14,padding:'12px 16px',color:'#f1f5f9',fontSize:14,outline:'none',fontFamily:'inherit'}}/>
+        <button onClick={()=>send()} disabled={!input.trim()||loading}
+          style={{width:48,height:48,borderRadius:14,background:input.trim()&&!loading?'linear-gradient(135deg,#7c3aed,#4c1d95)':'#1e293b',border:'none',display:'flex',alignItems:'center',justifyContent:'center',cursor:input.trim()&&!loading?'pointer':'default',fontSize:18,flexShrink:0}}>
+          {loading?<div style={{width:16,height:16,border:'2px solid #7c3aed',borderTopColor:'transparent',borderRadius:'50%'}} className="spin"/>:'➤'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Medical Profile Screen ─────────────────────────────────────────────────
+function ProfileScreen({user}) {
+  const BLOOD = ['A+','A-','B+','B-','AB+','AB-','O+','O-'];
+  const [profile,setProfile] = useState({
+    fullName:user?.displayName||'', age:'', gender:'', height:'', weight:'', bloodGroup:'O+',
+    allergies:'', medications:'', medicalConditions:'', organDonor:false,
+    contact1Name:'', contact1Phone:'', contact1Rel:'Father',
+    contact2Name:'', contact2Phone:'', contact2Rel:'Mother',
+  });
+  const [saving,setSaving] = useState(false);
+  const [saved,setSaved] = useState(false);
+  const [tab,setTab] = useState('personal');
+
+  const save = async() => {
+    setSaving(true);
+    await new Promise(r=>setTimeout(r,800));
+    if(!DEMO_MODE) {
+      try {
+        await db.collection('medical_profiles').doc(user.uid).set({
+          ...profile,allergies:profile.allergies.split(',').map(s=>s.trim()).filter(Boolean),
+          medications:profile.medications.split(',').map(s=>s.trim()).filter(Boolean),
+          medicalConditions:profile.medicalConditions.split(',').map(s=>s.trim()).filter(Boolean),
+          updatedAt:firebase.firestore.FieldValue.serverTimestamp(),
+        },{merge:true});
+      } catch{}
+    }
+    setSaving(false); setSaved(true);
+    setTimeout(()=>setSaved(false),2500);
+  };
+
+  const inp = {width:'100%',background:'#1e293b',border:'1px solid #334155',borderRadius:12,padding:'12px 14px',color:'#f1f5f9',fontSize:14,outline:'none',marginBottom:12,fontFamily:'inherit'};
+  const fld = (label,key,type='text',ph='') => (
+    <div><label style={{color:'#64748b',fontSize:11,fontWeight:500,display:'block',marginBottom:6,textTransform:'uppercase',letterSpacing:'.05em'}}>{label}</label>
+      <input type={type} value={profile[key]} onChange={e=>setProfile(p=>({...p,[key]:e.target.value}))} placeholder={ph} style={inp}/></div>
+  );
+
+  return (
+    <div style={{height:'100%',display:'flex',flexDirection:'column',background:'#020617'}}>
+      <div style={{padding:'48px 20px 16px',background:'linear-gradient(160deg,#0f172a,#052e16)',borderBottom:'1px solid #1e293b',flexShrink:0}}>
+        <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+          <div style={{width:48,height:48,borderRadius:14,background:'linear-gradient(135deg,#10b981,#059669)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22}}>👤</div>
+          <div>
+            <h2 style={{color:'#f1f5f9',fontSize:18,fontWeight:700}}>Medical Profile</h2>
+            <p style={{color:'#64748b',fontSize:12}}>In Case of Emergency (ICE)</p>
+          </div>
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          {['personal','medical','contacts'].map(t=>(
+            <button key={t} onClick={()=>setTab(t)}
+              style={{flex:1,padding:'8px',borderRadius:10,border:`1px solid ${tab===t?'rgba(16,185,129,.4)':'#334155'}`,background:tab===t?'rgba(16,185,129,.1)':'transparent',color:tab===t?'#34d399':'#475569',fontSize:12,fontWeight:500,cursor:'pointer',textTransform:'capitalize'}}>
+              {t}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{flex:1,overflowY:'auto',padding:'20px 20px 0'}}>
+        {tab==='personal'&&<>
+          {fld('Full Name','fullName','text','Your full name')}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            <div>{fld('Age','age','number','Years')}</div>
+            <div>
+              <label style={{color:'#64748b',fontSize:11,fontWeight:500,display:'block',marginBottom:6,textTransform:'uppercase',letterSpacing:'.05em'}}>Gender</label>
+              <select value={profile.gender} onChange={e=>setProfile(p=>({...p,gender:e.target.value}))} style={{...inp,marginBottom:0}}>
+                <option value="">Select</option>
+                <option value="male">Male</option><option value="female">Female</option><option value="other">Other</option>
+              </select>
+            </div>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            {fld('Height (cm)','height','number','175')}
+            {fld('Weight (kg)','weight','number','70')}
+          </div>
+          <div>
+            <label style={{color:'#64748b',fontSize:11,fontWeight:500,display:'block',marginBottom:8,textTransform:'uppercase',letterSpacing:'.05em'}}>Blood Group</label>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,marginBottom:16}}>
+              {BLOOD.map(bg=>(
+                <button key={bg} onClick={()=>setProfile(p=>({...p,bloodGroup:bg}))}
+                  style={{padding:'10px',borderRadius:10,border:`1px solid ${profile.bloodGroup===bg?'#ef4444':'#334155'}`,background:profile.bloodGroup===bg?'rgba(239,68,68,.15)':'rgba(255,255,255,.02)',color:profile.bloodGroup===bg?'#f87171':'#64748b',fontSize:13,fontWeight:700,cursor:'pointer'}}>
+                  {bg}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px',borderRadius:12,background:'rgba(255,255,255,.03)',border:'1px solid #1e293b',marginBottom:16}}>
+            <div>
+              <p style={{color:'#f1f5f9',fontSize:13,fontWeight:500}}>Organ Donor</p>
+              <p style={{color:'#64748b',fontSize:11}}>Register as organ donor</p>
+            </div>
+            <div onClick={()=>setProfile(p=>({...p,organDonor:!p.organDonor}))}
+              style={{width:44,height:24,borderRadius:999,background:profile.organDonor?'#10b981':'#334155',position:'relative',cursor:'pointer',transition:'background .2s'}}>
+              <div style={{width:18,height:18,borderRadius:'50%',background:'#fff',position:'absolute',top:3,left:profile.organDonor?22:3,transition:'left .2s',boxShadow:'0 1px 4px rgba(0,0,0,.3)'}}/>
+            </div>
+          </div>
+        </>}
+
+        {tab==='medical'&&<>
+          <div>
+            <label style={{color:'#64748b',fontSize:11,fontWeight:500,display:'block',marginBottom:6,textTransform:'uppercase',letterSpacing:'.05em'}}>Allergies</label>
+            <textarea value={profile.allergies} onChange={e=>setProfile(p=>({...p,allergies:e.target.value}))} placeholder="Penicillin, Shellfish… (comma separated)"
+              style={{...inp,height:80,resize:'none'}}/>
+          </div>
+          <div>
+            <label style={{color:'#64748b',fontSize:11,fontWeight:500,display:'block',marginBottom:6,textTransform:'uppercase',letterSpacing:'.05em'}}>Current Medications</label>
+            <textarea value={profile.medications} onChange={e=>setProfile(p=>({...p,medications:e.target.value}))} placeholder="Metformin 500mg, Aspirin… (comma separated)"
+              style={{...inp,height:80,resize:'none'}}/>
+          </div>
+          <div>
+            <label style={{color:'#64748b',fontSize:11,fontWeight:500,display:'block',marginBottom:6,textTransform:'uppercase',letterSpacing:'.05em'}}>Medical Conditions</label>
+            <textarea value={profile.medicalConditions} onChange={e=>setProfile(p=>({...p,medicalConditions:e.target.value}))} placeholder="Diabetes, Hypertension… (comma separated)"
+              style={{...inp,height:80,resize:'none'}}/>
+          </div>
+        </>}
+
+        {tab==='contacts'&&<>
+          {[{n:'contact1',label:'Primary Contact'},{n:'contact2',label:'Secondary Contact'}].map(({n,label})=>(
+            <div key={n} style={{marginBottom:20}}>
+              <p style={{color:'#94a3b8',fontSize:13,fontWeight:600,marginBottom:12}}>📞 {label}</p>
+              {fld('Name',`${n}Name`,'text','Contact name')}
+              {fld('Phone',`${n}Phone`,'tel','+91-XXXXXXXXXX')}
+              <div>
+                <label style={{color:'#64748b',fontSize:11,fontWeight:500,display:'block',marginBottom:6,textTransform:'uppercase',letterSpacing:'.05em'}}>Relation</label>
+                <select value={profile[`${n}Rel`]} onChange={e=>setProfile(p=>({...p,[`${n}Rel`]:e.target.value}))} style={inp}>
+                  {['Father','Mother','Spouse','Sibling','Friend','Guardian','Doctor','Other'].map(r=><option key={r}>{r}</option>)}
+                </select>
+              </div>
+            </div>
+          ))}
+        </>}
+      </div>
+
+      <div style={{padding:'12px 20px 80px',flexShrink:0}}>
+        <button onClick={save} disabled={saving}
+          style={{width:'100%',padding:'15px',borderRadius:14,background:saved?'linear-gradient(135deg,#10b981,#059669)':'linear-gradient(135deg,#16a34a,#15803d)',border:'none',color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',opacity:saving?.7:1}}>
+          {saving?'Saving…':saved?'✓ Saved!':'Save Medical Profile'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── History Screen ─────────────────────────────────────────────────────────
+function HistoryScreen({emergencyHistory}) {
+  const STATUS_C = {active:'#ef4444',assigned:'#f59e0b',resolved:'#10b981',cancelled:'#64748b'};
+  return (
+    <div style={{height:'100%',overflowY:'auto',paddingBottom:80}}>
+      <div style={{padding:'48px 20px 20px',background:'linear-gradient(160deg,#0f172a,#020617)'}}>
+        <h2 style={{color:'#f1f5f9',fontSize:22,fontWeight:700,marginBottom:4}}>Emergency History</h2>
+        <p style={{color:'#64748b',fontSize:13}}>{emergencyHistory.length} total records</p>
+      </div>
+      {emergencyHistory.length===0
+        ? <div style={{padding:40,textAlign:'center'}}>
+            <div style={{fontSize:48,marginBottom:16}}>📋</div>
+            <p style={{color:'#475569',fontSize:14,fontWeight:500}}>No emergency history</p>
+            <p style={{color:'#334155',fontSize:13,marginTop:4}}>Your SOS history will appear here</p>
+          </div>
+        : <div style={{padding:'0 16px',display:'flex',flexDirection:'column',gap:12}}>
+            {emergencyHistory.map(e=>{
+              const type = EMERGENCY_TYPES.find(t=>t.id===e.type)||{icon:'⚠️',label:e.type,color:'#64748b'};
+              const sc = STATUS_C[e.status]||'#64748b';
+              return (
+                <div key={e.id} style={{padding:'16px',borderRadius:16,background:'#0f172a',border:'1px solid #1e293b'}}>
+                  <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:10}}>
+                    <div style={{display:'flex',alignItems:'center',gap:10}}>
+                      <span style={{fontSize:28}}>{type.icon}</span>
+                      <div>
+                        <p style={{color:'#f1f5f9',fontSize:14,fontWeight:600}}>{type.label}</p>
+                        <p style={{color:'#475569',fontSize:11,marginTop:1}}>{timeAgo(e.createdAt)}</p>
+                      </div>
+                    </div>
+                    <span style={{fontSize:11,padding:'3px 10px',borderRadius:999,background:`${sc}15`,color:sc,border:`1px solid ${sc}30`,fontWeight:500,textTransform:'capitalize'}}>{e.status}</span>
+                  </div>
+                  <div style={{display:'flex',gap:8,fontSize:11,color:'#475569',flexWrap:'wrap'}}>
+                    <span>📍 {e.location?.latitude?.toFixed(4)}, {e.location?.longitude?.toFixed(4)}</span>
+                    {e.assignedTeamName&&<span>· 🦺 {e.assignedTeamName}</span>}
+                    <span>· ID: {e.id}</span>
+                  </div>
+                  {/* Timeline */}
+                  <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:6}}>
+                    {[
+                      {done:true, label:'SOS Activated'},
+                      {done:e.status!=='active', label:'Team Assigned'},
+                      {done:e.status==='resolved', label:'Rescue Complete'},
+                    ].map((s,i)=>(
+                      <div key={i} style={{display:'flex',alignItems:'center',gap:8}}>
+                        <div style={{width:14,height:14,borderRadius:'50%',background:s.done?'#10b981':'#334155',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:8,color:'#fff'}}>{s.done?'✓':''}</div>
+                        <span style={{fontSize:11,color:s.done?'#34d399':'#475569'}}>{s.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+      }
+    </div>
+  );
+}
+
+// ─── Nearby Services ────────────────────────────────────────────────────────
+function NearbyScreen() {
+  const [tab,setTab] = useState('hospitals');
+  const DATA = {
+    hospitals:[
+      {name:'PSG Hospital',dist:'1.2km',phone:'0422-4345678',open:true,icon:'🏥',type:'Private'},
+      {name:'Govt. Medical College',dist:'2.1km',phone:'0422-2301393',open:true,icon:'🏥',type:'Government'},
+      {name:'KMCH',dist:'3.4km',phone:'0422-4323800',open:true,icon:'🏥',type:'Private'},
+    ],
+    police:[
+      {name:'Peelamedu Police Station',dist:'0.8km',phone:'0422-2570892',open:true,icon:'👮',type:'Police'},
+      {name:'Ukkadam Police Station',dist:'2.5km',phone:'0422-2391234',open:true,icon:'👮',type:'Police'},
+    ],
+    fire:[
+      {name:'Coimbatore Fire Station',dist:'1.5km',phone:'101',open:true,icon:'🚒',type:'Fire'},
+      {name:'Gandhipuram Fire Station',dist:'3.2km',phone:'101',open:true,icon:'🚒',type:'Fire'},
+    ],
+  };
+  const services = DATA[tab]||[];
+  return (
+    <div style={{height:'100%',overflowY:'auto',paddingBottom:80}}>
+      <div style={{padding:'48px 20px 16px',background:'linear-gradient(160deg,#0f172a,#020617)'}}>
+        <h2 style={{color:'#f1f5f9',fontSize:22,fontWeight:700,marginBottom:4}}>Nearby Services</h2>
+        <p style={{color:'#64748b',fontSize:13}}>Emergency services near your location</p>
+        <div style={{display:'flex',gap:8,marginTop:16}}>
+          {['hospitals','police','fire'].map(t=>(
+            <button key={t} onClick={()=>setTab(t)}
+              style={{flex:1,padding:'9px',borderRadius:10,border:`1px solid ${tab===t?'rgba(239,68,68,.4)':'#334155'}`,background:tab===t?'rgba(239,68,68,.1)':'transparent',color:tab===t?'#f87171':'#475569',fontSize:12,fontWeight:500,cursor:'pointer',textTransform:'capitalize'}}>
+              {t}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{padding:'12px 16px',display:'flex',flexDirection:'column',gap:10}}>
+        {services.map((s,i)=>(
+          <div key={i} style={{padding:'16px',borderRadius:16,background:'#0f172a',border:'1px solid #1e293b'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <span style={{fontSize:28}}>{s.icon}</span>
+                <div>
+                  <p style={{color:'#f1f5f9',fontSize:14,fontWeight:600}}>{s.name}</p>
+                  <p style={{color:'#475569',fontSize:12}}>📍 {s.dist} away · {s.type}</p>
+                </div>
+              </div>
+              <span style={{fontSize:11,padding:'3px 10px',borderRadius:999,background:s.open?'rgba(16,185,129,.1)':'rgba(239,68,68,.1)',color:s.open?'#34d399':'#f87171',border:`1px solid ${s.open?'rgba(16,185,129,.3)':'rgba(239,68,68,.3)'}`}}>
+                {s.open?'Open':'Closed'}
+              </span>
+            </div>
+            <div style={{display:'flex',gap:8}}>
+              <a href={`tel:${s.phone}`} style={{flex:1,padding:'10px',borderRadius:10,background:'rgba(16,185,129,.1)',border:'1px solid rgba(16,185,129,.3)',color:'#34d399',fontSize:13,fontWeight:600,textDecoration:'none',textAlign:'center',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
+                📞 Call
+              </a>
+              <button style={{flex:1,padding:'10px',borderRadius:10,background:'rgba(59,130,246,.1)',border:'1px solid rgba(59,130,246,.3)',color:'#60a5fa',fontSize:13,fontWeight:600,cursor:'pointer'}}>
+                🗺 Navigate
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Drone Screen ──────────────────────────────────────────────────────────
+function DroneScreen() {
+  const [droneStatus,setDroneStatus] = useState('standby');
+  const [battery] = useState(92);
+  const [altitude,setAltitude] = useState(0);
+  const [speed,setSpeed] = useState(0);
+  const [progress,setProgress] = useState(0);
+
+  const launch = () => {
+    setDroneStatus('searching'); setAltitude(80); setSpeed(45); setProgress(15);
+    setTimeout(()=>{setDroneStatus('en_route'); setAltitude(120); setSpeed(60); setProgress(45);},3000);
+    setTimeout(()=>{setDroneStatus('victim_located'); setAltitude(30); setSpeed(10); setProgress(80);},8000);
+    setTimeout(()=>{setDroneStatus('rescue_complete'); setAltitude(0); setSpeed(0); setProgress(100);},14000);
+  };
+  const ret = () => { setDroneStatus('standby'); setAltitude(0); setSpeed(0); setProgress(0); };
+
+  const STATUS_INFO = {
+    standby:{label:'Standby',color:'#64748b',desc:'Ready for deployment'},
+    searching:{label:'Searching',color:'#3b82f6',desc:'Scanning area for victim'},
+    en_route:{label:'En Route',color:'#f59e0b',desc:'Flying to incident location'},
+    victim_located:{label:'Victim Located',color:'#ef4444',desc:'Victim spotted — descending'},
+    rescue_complete:{label:'Rescue Complete',color:'#10b981',desc:'Mission accomplished'},
+  };
+  const info = STATUS_INFO[droneStatus];
+
+  return (
+    <div style={{height:'100%',overflowY:'auto',paddingBottom:80}}>
+      <div style={{padding:'48px 20px 20px',background:'linear-gradient(160deg,#0c1a2e,#020617)'}}>
+        <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+          <div style={{width:48,height:48,borderRadius:14,background:'linear-gradient(135deg,#1d4ed8,#1e40af)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24}}>🚁</div>
+          <div>
+            <h2 style={{color:'#f1f5f9',fontSize:18,fontWeight:700}}>ResQDrone-X1</h2>
+            <p style={{color:'#64748b',fontSize:12}}>Emergency rescue drone</p>
+          </div>
+        </div>
+
+        {/* Main status */}
+        <div style={{padding:'20px',borderRadius:18,background:`rgba(29,78,216,.1)`,border:'1px solid rgba(29,78,216,.2)',textAlign:'center'}}>
+          <div style={{fontSize:64,marginBottom:12}}>🚁</div>
+          <div style={{display:'inline-flex',alignItems:'center',gap:6,padding:'6px 16px',borderRadius:999,background:`${info.color}20`,border:`1px solid ${info.color}40`,marginBottom:8}}>
+            <div style={{width:6,height:6,borderRadius:'50%',background:info.color}} className={droneStatus!=='standby'&&droneStatus!=='rescue_complete'?'pulse':''}/>
+            <span style={{color:info.color,fontSize:13,fontWeight:600}}>{info.label}</span>
+          </div>
+          <p style={{color:'#64748b',fontSize:12}}>{info.desc}</p>
+
+          {progress>0&&<div style={{marginTop:16}}>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:6}}>
+              <span style={{color:'#475569'}}>Mission Progress</span>
+              <span style={{color:'#94a3b8'}}>{progress}%</span>
+            </div>
+            <div style={{height:6,borderRadius:999,background:'#1e293b'}}>
+              <div style={{height:6,borderRadius:999,background:'linear-gradient(90deg,#3b82f6,#8b5cf6)',width:`${progress}%`,transition:'width 1s ease'}}/>
+            </div>
+          </div>}
+        </div>
+      </div>
+
+      <div style={{padding:'16px 20px',display:'flex',flexDirection:'column',gap:14}}>
+        {/* Stats grid */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+          {[
+            {label:'Battery',value:`${battery}%`,color:battery>50?'#10b981':battery>20?'#f59e0b':'#ef4444',icon:'🔋'},
+            {label:'Altitude',value:`${altitude}m`,color:'#60a5fa',icon:'📏'},
+            {label:'Speed',value:`${speed} km/h`,color:'#a78bfa',icon:'⚡'},
+            {label:'Range',value:'5 km',color:'#34d399',icon:'📡'},
+          ].map(s=>(
+            <div key={s.label} style={{padding:'14px',borderRadius:14,background:'#0f172a',border:'1px solid #1e293b'}}>
+              <p style={{color:'#475569',fontSize:11,marginBottom:6}}>{s.icon} {s.label}</p>
+              <p style={{color:s.color,fontSize:20,fontWeight:700}}>{s.value}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Capabilities */}
+        <div style={{padding:'14px',borderRadius:14,background:'#0f172a',border:'1px solid #1e293b'}}>
+          <p style={{color:'#64748b',fontSize:11,textTransform:'uppercase',letterSpacing:'.08em',marginBottom:12,fontWeight:500}}>Capabilities</p>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+            {['🎥 Thermal Camera','🔦 Search Light','🔊 Loud Speaker','💊 Med Delivery','📦 First Aid Drop','📍 GPS Tracking'].map(c=>(
+              <div key={c} style={{fontSize:12,color:'#64748b',display:'flex',alignItems:'center',gap:6,padding:'6px 0'}}>{c}</div>
+            ))}
+          </div>
+        </div>
+
+        {/* Controls */}
+        <div style={{display:'flex',gap:10}}>
+          {droneStatus==='standby'
+            ? <button onClick={launch} style={{flex:1,padding:'16px',borderRadius:14,background:'linear-gradient(135deg,#1d4ed8,#1e40af)',border:'none',color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',boxShadow:'0 8px 24px rgba(29,78,216,.4)'}}>
+                🚀 Launch Drone
+              </button>
+            : <button onClick={ret} style={{flex:1,padding:'16px',borderRadius:14,background:'rgba(100,116,139,.1)',border:'1px solid #334155',color:'#94a3b8',fontSize:15,fontWeight:600,cursor:'pointer'}}>
+                ↩ Return to Base
+              </button>
+          }
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Bluetooth Screen ──────────────────────────────────────────────────────
+function BluetoothScreen({user,location}) {
+  const [active,setActive] = useState(false);
+  const [nearby,setNearby] = useState([]);
+
+  useEffect(()=>{
+    if(!active) { setNearby([]); return; }
+    const t = setTimeout(()=>{
+      setNearby([
+        {id:'RES-001',type:'Rescue Team',signal:'strong',dist:'45m',name:'Alpha Rescue Unit'},
+        {id:'USR-432',type:'ResQLink User',signal:'medium',dist:'120m',name:'Unknown User'},
+        {id:'DRN-X2',type:'ResQDrone',signal:'weak',dist:'380m',name:'ResQDrone-X2'},
+      ]);
+    },2000);
+    return ()=>clearTimeout(t);
+  },[active]);
+
+  const SC = {strong:'#10b981',medium:'#f59e0b',weak:'#ef4444'};
+
+  return (
+    <div style={{height:'100%',overflowY:'auto',paddingBottom:80}}>
+      <div style={{padding:'48px 20px 20px',background:'linear-gradient(160deg,#0a1628,#020617)'}}>
+        <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:20}}>
+          <div style={{width:48,height:48,borderRadius:14,background:'linear-gradient(135deg,#1d4ed8,#0ea5e9)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22}}>📶</div>
+          <div><h2 style={{color:'#f1f5f9',fontSize:18,fontWeight:700}}>BlueBeacon BLE</h2>
+            <p style={{color:'#64748b',fontSize:12}}>Offline rescue detection</p></div>
+        </div>
+
+        {/* Toggle */}
+        <div style={{padding:'20px',borderRadius:18,background:active?'rgba(30,120,255,.1)':'rgba(255,255,255,.03)',border:`1px solid ${active?'rgba(30,120,255,.3)':'rgba(255,255,255,.08)'}`,textAlign:'center',transition:'all .3s'}}>
+          <div style={{fontSize:56,marginBottom:12}}>{active?'📡':'📶'}</div>
+          <p style={{color:active?'#60a5fa':'#64748b',fontSize:15,fontWeight:600,marginBottom:4}}>{active?'Broadcasting Signal…':'BlueBeacon Inactive'}</p>
+          <p style={{color:'#475569',fontSize:12,marginBottom:16}}>{active?'Emergency data being broadcast to nearby devices':'Activate to broadcast your location offline'}</p>
+          <button onClick={()=>setActive(!active)}
+            style={{padding:'12px 32px',borderRadius:12,background:active?'rgba(239,68,68,.15)':'linear-gradient(135deg,#1d4ed8,#0ea5e9)',border:active?'1px solid rgba(239,68,68,.3)':'none',color:active?'#f87171':'#fff',fontSize:14,fontWeight:700,cursor:'pointer'}}>
+            {active?'Stop Broadcasting':'Activate BlueBeacon'}
+          </button>
+        </div>
+      </div>
+
+      <div style={{padding:'16px 20px'}}>
+        {active&&<>
+          {/* Broadcast data */}
+          <p style={{color:'#64748b',fontSize:11,textTransform:'uppercase',letterSpacing:'.08em',marginBottom:10,fontWeight:500}}>Broadcasting</p>
+          <div style={{padding:'14px',borderRadius:14,background:'rgba(30,120,255,.05)',border:'1px solid rgba(30,120,255,.2)',marginBottom:16,display:'flex',flexDirection:'column',gap:6}}>
+            {[
+              ['User ID', user?.uid?.slice(0,8)||'DEMO-001'],
+              ['Location', location?`${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`:'11.0168, 76.9558'],
+              ['Blood Group','O+'],
+              ['Battery','87%'],
+              ['Emergency','Active SOS'],
+            ].map(([k,v])=>(
+              <div key={k} style={{display:'flex',justifyContent:'space-between',fontSize:12}}>
+                <span style={{color:'#475569'}}>{k}</span>
+                <span style={{color:'#94a3b8',fontFamily:'monospace',fontSize:11}}>{v}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Nearby devices */}
+          <p style={{color:'#64748b',fontSize:11,textTransform:'uppercase',letterSpacing:'.08em',marginBottom:10,fontWeight:500}}>Nearby Devices ({nearby.length})</p>
+          {nearby.length===0
+            ? <div style={{textAlign:'center',padding:20,color:'#334155',fontSize:13}}>Scanning for devices…</div>
+            : <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                {nearby.map(d=>(
+                  <div key={d.id} style={{padding:'14px',borderRadius:14,background:'#0f172a',border:'1px solid #1e293b',display:'flex',alignItems:'center',gap:12}}>
+                    <div style={{width:36,height:36,borderRadius:10,background:`${SC[d.signal]}15`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>
+                      {d.type.includes('Drone')?'🚁':d.type.includes('Team')?'🦺':'📱'}
+                    </div>
+                    <div style={{flex:1}}>
+                      <p style={{color:'#f1f5f9',fontSize:13,fontWeight:500}}>{d.name}</p>
+                      <p style={{color:'#475569',fontSize:11}}>{d.type} · {d.dist}</p>
+                    </div>
+                    <div style={{textAlign:'right'}}>
+                      <span style={{fontSize:11,padding:'2px 8px',borderRadius:6,background:`${SC[d.signal]}15`,color:SC[d.signal],border:`1px solid ${SC[d.signal]}30`}}>{d.signal}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+          }
+        </>}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main App ──────────────────────────────────────────────────────────────
+function App() {
+  const [screen,setScreen] = useState('splash');
+  const [tab,setTab] = useState('home');
+  const [user,setUser] = useState(null);
+  const [location,setLocation] = useState(null);
+  const [sosActive,setSosActive] = useState(false);
+  const [selectedType,setSelectedType] = useState(null);
+  const [history,setHistory] = useState([]);
+
+  // GPS
+  useEffect(()=>{
+    if(!navigator.geolocation) return;
+    const wid = navigator.geolocation.watchPosition(
+      pos=>setLocation({latitude:pos.coords.latitude,longitude:pos.coords.longitude,altitude:pos.coords.altitude,accuracy:pos.coords.accuracy,timestamp:Date.now()}),
+      ()=>setLocation({latitude:11.0168,longitude:76.9558,altitude:500,accuracy:15,timestamp:Date.now()}),
+      {enableHighAccuracy:true,timeout:10000,maximumAge:0}
+    );
+    return ()=>navigator.geolocation.clearWatch(wid);
+  },[]);
+
+  // Firebase auth
+  useEffect(()=>{
+    if(DEMO_MODE||screen!=='auth') return;
+    const unsub = auth.onAuthStateChanged(async fbUser=>{
+      if(fbUser) {
+        const snap = await db.collection('users').doc(fbUser.uid).get();
+        const d = snap.exists?snap.data():{};
+        const u = {uid:fbUser.uid,email:fbUser.email,displayName:d.displayName||'User',role:d.role||'user',phone:d.phone};
+        setUser(u); setScreen('main');
+      }
+    });
+    return unsub;
+  },[screen]);
+
+  const handleAuth = (u) => { setUser(u); setScreen('main'); };
+  const handleSOSTrigger = (e) => { setHistory(h=>[e,...h]); };
+  const handleTabChange = (t) => {
+    if(['nearby','history','drone','bluetooth'].includes(t)) { setTab(t); }
+    else { setTab(t); }
+  };
+
+  if(screen==='splash') return <SplashScreen onStart={()=>setScreen('auth')}/>;
+  if(screen==='auth') return <AuthScreen onAuth={handleAuth}/>;
+
+  const SCREENS = {
+    home: <HomeScreen user={user} location={location} sosActive={sosActive} setSosActive={setSosActive} setTab={handleTabChange} emergencyHistory={history}/>,
+    emergency: <EmergencyScreen onSelect={t=>{setSelectedType(t);setTab('sos');}} selectedType={selectedType} onFirstAid={()=>{}}/>,
+    sos: <SOSScreen user={user} location={location} selectedType={selectedType} sosActive={sosActive} setSosActive={setSosActive} onSOSTrigger={handleSOSTrigger} emergencyHistory={history}/>,
+    ai: <AIScreen user={user}/>,
+    profile: <ProfileScreen user={user}/>,
+    nearby: <NearbyScreen/>,
+    history: <HistoryScreen emergencyHistory={history}/>,
+    drone: <DroneScreen/>,
+    bluetooth: <BluetoothScreen user={user} location={location}/>,
+    medical: <ProfileScreen user={user}/>,
+  };
+
+  return (
+    <div style={{height:'100vh',display:'flex',flexDirection:'column',background:'#020617',maxWidth:430,margin:'0 auto',position:'relative',overflow:'hidden'}}>
+      <div style={{flex:1,overflow:'hidden',position:'relative'}}>
+        {SCREENS[tab]||SCREENS.home}
+      </div>
+      <BottomNav tab={tab} setTab={handleTabChange} sosActive={sosActive}/>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
